@@ -51,7 +51,6 @@ CREATE TABLE station_connections (
     PRIMARY KEY (from_station_id, to_station_id, line_id)
 );
 
-
 -- ============================================================
 --  VECTOR SCHEMA  (RAG / Help Desk) — do not modify
 -- ============================================================
