@@ -62,3 +62,27 @@ CREATE TABLE metro_stations (
     is_interchange_national_rail BOOLEAN DEFAULT FALSE,
     interchange_national_rail_station_id VARCHAR(10)
 );
+CREATE TABLE national_rail_stations (
+    station_id VARCHAR(10) PRIMARY KEY,
+    name TEXT NOT NULL,
+    lines TEXT[] NOT NULL,
+    is_interchange_national_rail BOOLEAN DEFAULT FALSE,
+    interchange_national_rail_lines TEXT[],
+    is_interchange_metro BOOLEAN DEFAULT FALSE,
+    interchange_metro_station_id VARCHAR(10)
+);
+CREATE TABLE metro_schedules (
+    schedule_id VARCHAR(20) PRIMARY KEY,
+    line VARCHAR(5) NOT NULL,
+    direction VARCHAR(20),
+    origin_station_id VARCHAR(10),
+    destination_station_id VARCHAR(10),
+    stops_in_order TEXT[],
+    first_train_time TEXT,
+    last_train_time TEXT,
+    travel_time_from_origin_min JSONB,
+    base_fare_usd REAL,
+    per_stop_rate_usd REAL,
+    frequency_min INT,
+    operates_on TEXT[]
+);

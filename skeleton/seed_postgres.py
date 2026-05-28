@@ -56,22 +56,88 @@ def insert_many(cur, table, columns, rows):
 
 def seed_metro_stations(cur):
     data = load("metro_stations.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    # Each item in `data` is a dict — inspect the JSON to see available fields.
-    pass
+    table_name = "metro_stations"
+    columns = [
+        "station_id", "name", "lines", 
+        "is_interchange_metro", "interchange_metro_lines", 
+        "is_interchange_national_rail", "interchange_national_rail_station_id"
+    ]
+    rows = []
+    for item in data:
+        row = (
+            item.get("station_id"),
+            item.get("name"),
+            item.get("lines"),
+            item.get("is_interchange_metro"),
+            item.get("interchange_metro_lines"),
+            item.get("is_interchange_national_rail"),
+            item.get("interchange_national_rail_station_id")
+        )
+        rows.append(row)
+    inserted_count = insert_many(cur, table_name, columns, rows)
+    print(f"✅ 成功插入 {inserted_count} 筆捷運車站資料！")
 
 
 def seed_national_rail_stations(cur):
     data = load("national_rail_stations.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
+    
+    table_name = "national_rail_stations" 
+    columns = [
+        "station_id", 
+        "name", 
+        "lines", 
+        "is_interchange_national_rail", 
+        "interchange_national_rail_lines", 
+        "is_interchange_metro", 
+        "interchange_metro_station_id"
+    ]
+    
+    rows = []
+    for item in data:
+        row = (
+            item.get("station_id"),
+            item.get("name"),
+            item.get("lines"), 
+            item.get("is_interchange_national_rail"),
+            item.get("interchange_national_rail_lines"),
+            item.get("is_interchange_metro"),
+            item.get("interchange_metro_station_id")
+        )
+        rows.append(row)
+        
+    inserted_count = insert_many(cur, table_name, columns, rows)
+    print(f"✅ 成功插入 {inserted_count} 筆國鐵車站資料！")
 
 
 def seed_metro_schedules(cur):
+    import json
     data = load("metro_schedules.json")
-    # TODO: Design your table schema, then implement the INSERT logic here.
-    pass
-
+    table_name = "metro_schedules"
+    columns = [
+        "schedule_id", "line", "direction", "origin_station_id", "destination_station_id",
+        "stops_in_order", "first_train_time", "last_train_time", "travel_time_from_origin_min",
+        "base_fare_usd", "per_stop_rate_usd", "frequency_min", "operates_on"
+    ]
+    rows = []
+    for item in data:
+        row = (
+            item.get("schedule_id"),
+            item.get("line"),
+            item.get("direction"),
+            item.get("origin_station_id"),
+            item.get("destination_station_id"),
+            item.get("stops_in_order"),
+            item.get("first_train_time"),
+            item.get("last_train_time"),
+            json.dumps(item.get("travel_time_from_origin_min")),
+            item.get("base_fare_usd"),
+            item.get("per_stop_rate_usd"),
+            item.get("frequency_min"),
+            item.get("operates_on")
+        )
+        rows.append(row)
+    inserted_count = insert_many(cur, table_name, columns, rows)
+    print(f"✅ 成功插入 {inserted_count} 筆捷運班次表資料！")
 
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
