@@ -148,7 +148,7 @@ def query_available_seats(
         fare_class:   "standard" or "first"
 
     Returns:
-        List of dicts: {seat_id, coach, row, column}
+        List   of dicts: {seat_id, coach, row, column}
     """
     raise NotImplementedError("TODO: implement after designing your schema")
 
