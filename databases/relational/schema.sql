@@ -51,4 +51,14 @@ CREATE TABLE IF NOT EXISTS policy_documents (
 );
 
 -- Index for fast cosine similarity search
-CREATE INDEX IF NOT EXISTS ON policy_documents USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS policy_documents_idx ON policy_documents USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE metro_stations (
+    station_id VARCHAR(10) PRIMARY KEY,
+    name TEXT NOT NULL,
+    lines TEXT[] NOT NULL, -- 使用陣列來儲存多條路線 (例如 '{"M1", "M2"}')
+    is_interchange_metro BOOLEAN DEFAULT FALSE,
+    interchange_metro_lines TEXT[],
+    is_interchange_national_rail BOOLEAN DEFAULT FALSE,
+    interchange_national_rail_station_id VARCHAR(10)
+);
