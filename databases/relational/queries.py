@@ -477,41 +477,172 @@ def execute_booking(
 ) -> tuple[bool, dict | str]:
     """
     Create a national rail booking for a logged-in user.
-
-    Args:
-        user_id:                e.g. "RU01" — must match the logged-in user
-        schedule_id:            e.g. "NR_SCH01"
-        origin_station_id:      e.g. "NR01"
-        destination_station_id: e.g. "NR05"
-        travel_date:            e.g. "2025-06-01"
-        fare_class:             "standard" or "first"
-        seat_id:                e.g. "B05" (or "any" to auto-assign)
-        ticket_type:            "single" (default) or "return"
-
-    Returns:
-        (True, booking_dict)   on success
-        (False, error_message) on failure
     """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    import psycopg2.extras
+    import json
+    from datetime import datetime, timezone
+
+    conn = _connect()
+    conn.autocommit = False  # 寫入操作，關閉自動提交以開啟交易 (Transaction)
+
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # 1. 獲取班次資訊以計算票價與搭乘站數
+            cur.execute("""
+                SELECT stops_in_order, fare_classes, first_train_time 
+                FROM national_rail_schedules 
+                WHERE schedule_id = %s
+            """, (schedule_id,))
+            schedule = cur.fetchone()
+            
+            if not schedule:
+                raise ValueError("Schedule not found")
+
+            # 計算搭乘站數
+            stops_list = schedule["stops_in_order"]
+            try:
+                origin_idx = stops_list.index(origin_station_id)
+                dest_idx = stops_list.index(destination_station_id)
+                stops_travelled = dest_idx - origin_idx
+                if stops_travelled <= 0:
+                    raise ValueError("Invalid direction or stations")
+            except ValueError:
+                raise ValueError("Stations not found in schedule route")
+
+            # 計算票價
+            fare_data = schedule["fare_classes"]
+            if isinstance(fare_data, str):
+                fare_data = json.loads(fare_data)
+            
+            if fare_class not in fare_data:
+                raise ValueError(f"Fare class {fare_class} not available")
+                
+            base_fare = float(fare_data[fare_class]["base_fare_usd"])
+            per_stop = float(fare_data[fare_class]["per_stop_rate_usd"])
+            amount_usd = base_fare + (per_stop * stops_travelled)
+            if ticket_type == "return":
+                amount_usd *= 1.9  # 假設來回票打 95 折
+
+            # 2. 獲取車廂 (Coach) 資訊
+            if seat_id.lower() == "any":
+                # 實作 auto-assign：找第一個該日期未被訂走的座位
+                cur.execute("""
+                    SELECT seat_id, coach FROM seat_layouts sl
+                    WHERE schedule_id = %s AND fare_class = %s
+                    AND NOT EXISTS (
+                        SELECT 1 FROM national_rail_bookings b
+                        WHERE b.schedule_id = sl.schedule_id 
+                        AND b.travel_date = %s AND b.seat_id = sl.seat_id AND b.status = 'completed'
+                    ) LIMIT 1
+                """, (schedule_id, fare_class, travel_date))
+                seat_row = cur.fetchone()
+                if not seat_row:
+                    raise ValueError("No seats available for auto-assignment")
+                seat_id = seat_row["seat_id"]
+                coach = seat_row["coach"]
+            else:
+                cur.execute("SELECT coach FROM seat_layouts WHERE schedule_id = %s AND seat_id = %s", 
+                            (schedule_id, seat_id))
+                coach_row = cur.fetchone()
+                if not coach_row:
+                    raise ValueError("Invalid seat_id for this schedule")
+                coach = coach_row["coach"]
+
+            # 3. 執行寫入 Booking 表格
+            booking_id = _gen_booking_id()
+            now_utc = datetime.now(timezone.utc)
+            
+            cur.execute("""
+                INSERT INTO national_rail_bookings (
+                    booking_id, user_id, schedule_id, origin_station_id, destination_station_id,
+                    travel_date, departure_time, ticket_type, fare_class, coach, seat_id,
+                    stops_travelled, amount_usd, status, booked_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                ) RETURNING *
+            """, (
+                booking_id, user_id, schedule_id, origin_station_id, destination_station_id,
+                travel_date, schedule["first_train_time"], ticket_type, fare_class, coach, seat_id,
+                stops_travelled, amount_usd, 'completed', now_utc
+            ))
+            
+            inserted_booking = dict(cur.fetchone())
+            
+            conn.commit()  # 提交交易
+            return (True, inserted_booking)
+
+    except Exception as e:
+        conn.rollback()  # 發生錯誤，退回整個交易
+        return (False, str(e))
+    finally:
+        conn.close()
 
 
 def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | str]:
     """
     Cancel a national rail booking owned by the given user.
-
-    Calculates the refund amount according to the booking's service type:
-      - Normal service: RF001 windows (100% / 75% / 50% / 0%)
-      - Express service: RF002 windows (100% / 50% / 0%)
-
-    Args:
-        booking_id: e.g. "BK001"
-        user_id:    must match the booking's user_id
-
-    Returns:
-        (True, result_dict)  with refund_amount_usd and policy note
-        (False, error_msg)
     """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    import psycopg2.extras
+    from datetime import datetime
+
+    conn = _connect()
+    conn.autocommit = False
+
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # 1. 檢查訂單是否存在且屬於該使用者
+            cur.execute("""
+                SELECT b.status, b.amount_usd, b.travel_date, s.service_type 
+                FROM national_rail_bookings b
+                JOIN national_rail_schedules s ON b.schedule_id = s.schedule_id
+                WHERE b.booking_id = %s AND b.user_id = %s
+            """, (booking_id, user_id))
+            
+            booking = cur.fetchone()
+            if not booking:
+                raise ValueError("Booking not found or access denied")
+            if booking["status"] == "cancelled":
+                raise ValueError("Booking is already cancelled")
+
+            # 2. 計算退款邏輯 (簡化版：根據距離出發的日期與車種判斷)
+            travel_date = booking["travel_date"]  # type: datetime.date
+            days_to_travel = (travel_date - datetime.now().date()).days
+            amount = float(booking["amount_usd"])
+            service_type = booking["service_type"]
+            
+            refund_pct = 0.0
+            policy_note = "0% refund due to late cancellation."
+            
+            if service_type.lower() == "normal":
+                if days_to_travel > 14:
+                    refund_pct, policy_note = 1.0, "100% refund (Normal service, >14 days)"
+                elif days_to_travel > 7:
+                    refund_pct, policy_note = 0.75, "75% refund (Normal service, >7 days)"
+                elif days_to_travel > 3:
+                    refund_pct, policy_note = 0.50, "50% refund (Normal service, >3 days)"
+            else: # Express
+                if days_to_travel > 14:
+                    refund_pct, policy_note = 1.0, "100% refund (Express service, >14 days)"
+                elif days_to_travel > 7:
+                    refund_pct, policy_note = 0.50, "50% refund (Express service, >7 days)"
+
+            refund_amount_usd = round(amount * refund_pct, 2)
+
+            # 3. 執行狀態更新
+            cur.execute("""
+                UPDATE national_rail_bookings 
+                SET status = 'cancelled' 
+                WHERE booking_id = %s
+            """, (booking_id,))
+
+            conn.commit()
+            return (True, {"refund_amount_usd": refund_amount_usd, "policy_note": policy_note})
+
+    except Exception as e:
+        conn.rollback()
+        return (False, str(e))
+    finally:
+        conn.close()
 
 
 # ── AUTHENTICATION QUERIES ────────────────────────────────────────────────────
@@ -525,37 +656,94 @@ def register_user(
     secret_question: str,
     secret_answer: str,
 ) -> tuple[bool, str]:
+    """Register a new user."""
+    from datetime import datetime, timezone
+    import random
+    
+    # 組合欄位以符合 Schema 設計
+    user_id = f"RU{random.randint(10000, 99999)}"
+    full_name = f"{first_name} {surname}"
+    dob = f"{year_of_birth}-01-01"
+    now = datetime.now(timezone.utc)
+    
+    sql = """
+        INSERT INTO registered_users (
+            user_id, full_name, email, password, date_of_birth, 
+            secret_question, secret_answer, registered_at, is_active
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
     """
-    Register a new user.
-    Returns (True, user_id) on success or (False, error_message) on failure.
-
-    NOTE: passwords are stored as plain text here intentionally for teaching
-    purposes. In production, replace with a salted hash (e.g. bcrypt).
-    """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (
+                    user_id, full_name, email, password, dob, 
+                    secret_question, secret_answer, now
+                ))
+        return (True, user_id)
+    except Exception as e:
+        # e.g., unique constraint violation on email
+        return (False, str(e))
 
 
 def login_user(email: str, password: str) -> Optional[dict]:
+    """Verify credentials."""
+    import psycopg2.extras
+    
+    sql = """
+        SELECT user_id, email, full_name, phone, date_of_birth, is_active 
+        FROM registered_users 
+        WHERE email = %s AND password = %s AND is_active = TRUE
     """
-    Verify credentials. Returns a user dict on success or None on failure.
-    Dict keys: user_id, email, full_name, first_name, surname, phone, date_of_birth, is_active.
-    """
-    raise NotImplementedError("TODO: implement after designing your schema")
+    
+    with _connect() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, (email, password))
+            row = cur.fetchone()
+            
+            if not row:
+                return None
+                
+            user_data = dict(row)
+            # 將 Schema 裡的 full_name 拆回 first_name 和 surname 以符合回傳規範
+            name_parts = user_data.get("full_name", "").split(" ", 1)
+            user_data["first_name"] = name_parts[0]
+            user_data["surname"] = name_parts[1] if len(name_parts) > 1 else ""
+            
+            return user_data
 
 
 def get_user_secret_question(email: str) -> Optional[str]:
     """Return the secret question for a registered email, or None if not found."""
-    raise NotImplementedError("TODO: implement after designing your schema")
+    sql = "SELECT secret_question FROM registered_users WHERE email = %s"
+    
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (email,))
+            row = cur.fetchone()
+            return row[0] if row else None
 
 
 def verify_secret_answer(email: str, answer: str) -> bool:
     """Return True if the provided answer matches the stored secret answer (case-insensitive)."""
-    raise NotImplementedError("TODO: implement after designing your schema")
+    # 透過 SQL 的 LOWER() 函式確保比對不分大小寫
+    sql = "SELECT 1 FROM registered_users WHERE email = %s AND LOWER(secret_answer) = LOWER(%s)"
+    
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (email, answer))
+            return cur.fetchone() is not None
 
 
 def update_password(email: str, new_password: str) -> bool:
     """Update the password for a user. Returns True if the row was updated."""
-    raise NotImplementedError("TODO: implement after designing your schema")
+    sql = "UPDATE registered_users SET password = %s WHERE email = %s"
+    
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (new_password, email))
+            # cur.rowcount 會回傳被影響的資料筆數，若 > 0 代表密碼更新成功
+            return cur.rowcount > 0
 
 
 # ── VECTOR / RAG QUERIES — do not modify ─────────────────────────────────────
