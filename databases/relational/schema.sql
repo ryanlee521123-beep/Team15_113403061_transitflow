@@ -151,24 +151,6 @@ CREATE TABLE bookings (
     travelled_at TIMESTAMP
 );
 
-CREATE TABLE payments (
-    payment_id VARCHAR(20) PRIMARY KEY,
-    booking_id VARCHAR(20) NOT NULL REFERENCES bookings(booking_id),
-    amount_usd DECIMAL(8,2) NOT NULL,
-    payment_method VARCHAR(50) NOT NULL,
-    payment_status VARCHAR(20) NOT NULL,
-    transaction_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE feedback (
-    feedback_id VARCHAR(20) PRIMARY KEY,
-    booking_id VARCHAR(20) REFERENCES bookings(booking_id),
-    user_id VARCHAR(20) REFERENCES users(user_id),
-    rating INT CHECK (rating BETWEEN 1 AND 5),
-    comment TEXT,
-    submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- ============================================================
 --  VECTOR SCHEMA  (RAG / Help Desk) — do not modify
 -- ============================================================
