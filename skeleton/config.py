@@ -28,7 +28,7 @@ OLLAMA_TIMEOUT        = int(os.getenv("OLLAMA_TIMEOUT", "300"))          # secon
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 PG_HOST     = os.getenv("PG_HOST",     "localhost")
-PG_PORT     = int(os.getenv("PG_PORT", "5432"))
+PG_PORT     = int(os.getenv("PG_PORT", "5433"))
 PG_USER     = os.getenv("PG_USER",     "transitflow")
 PG_PASSWORD = os.getenv("PG_PASSWORD", "transitflow")
 PG_DB       = os.getenv("PG_DB",       "transitflow")
