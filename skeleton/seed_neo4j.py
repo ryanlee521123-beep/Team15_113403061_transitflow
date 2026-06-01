@@ -40,23 +40,77 @@ def seed():
         session.run("MATCH (n) DETACH DELETE n")
         print("  Cleared existing graph data")
 
-        # TODO: Design your node labels and create metro station nodes.
-        # Each station has: station_id, name, lines, and interchange info.
-        # See metro_stations.json for the full data structure.
+        # 1. 建立捷運車站節點 (Nodes)
+        # 給予雙重標籤 Station 和 MetroStation，方便後續演算法搜尋
+        for s in metro_stations:
+            session.run(
+                """
+                MERGE (n:Station:MetroStation {station_id: $id})
+                SET n.name = $name, n.lines = $lines
+                """,
+                id=s["station_id"], name=s["name"], lines=s["lines"]
+            )
+        print("  Created MetroStation nodes")
 
-        # TODO: Design your node labels and create national rail station nodes.
-        # See national_rail_stations.json for the full data structure.
+        # 2. 建立國鐵車站節點 (Nodes)
+        for s in rail_stations:
+            session.run(
+                """
+                MERGE (n:Station:NationalRailStation {station_id: $id})
+                SET n.name = $name, n.lines = $lines
+                """,
+                id=s["station_id"], name=s["name"], lines=s["lines"]
+            )
+        print("  Created NationalRailStation nodes")
 
-        # TODO: Design your relationship types and create metro links.
-        # Each station lists its adjacent_stations with line and travel_time_min.
-        # Consider what properties to store on the relationship.
+        # 3. 建立捷運路線連線 (Edges: METRO_LINK)
+        # 遍歷 adjacent_stations 來建立相鄰車站的單向箭頭
+        for s in metro_stations:
+            for adj in s.get("adjacent_stations", []):
+                session.run(
+                    """
+                    MATCH (a:Station {station_id: $from_id})
+                    MATCH (b:Station {station_id: $to_id})
+                    MERGE (a)-[r:METRO_LINK {line: $line}]->(b)
+                    SET r.travel_time_min = $time
+                    """,
+                    from_id=s["station_id"], to_id=adj["station_id"],
+                    line=adj["line"], time=adj["travel_time_min"]
+                )
+        print("  Created metro links")
 
-        # TODO: Design your relationship types and create national rail links.
+        # 4. 建立國鐵路線連線 (Edges: RAIL_LINK)
+        for s in rail_stations:
+            for adj in s.get("adjacent_stations", []):
+                session.run(
+                    """
+                    MATCH (a:Station {station_id: $from_id})
+                    MATCH (b:Station {station_id: $to_id})
+                    MERGE (a)-[r:RAIL_LINK {line: $line}]->(b)
+                    SET r.travel_time_min = $time
+                    """,
+                    from_id=s["station_id"], to_id=adj["station_id"],
+                    line=adj["line"], time=adj["travel_time_min"]
+                )
+        print("  Created national rail links")
 
-        # TODO: Create interchange relationships between metro and rail stations.
-        # Interchange info is in the is_interchange_national_rail field
-        # of metro_stations.json.
-
+        # 5. 建立跨網轉乘連線 (Edges: INTERCHANGE)
+        # 找出共構車站，並建立雙向的轉乘通道，預設轉乘步行時間設為 5 分鐘
+        for s in metro_stations:
+            if s.get("is_interchange_national_rail"):
+                nr_id = s.get("interchange_national_rail_station_id")
+                if nr_id:
+                    session.run(
+                        """
+                        MATCH (m:MetroStation {station_id: $m_id})
+                        MATCH (r:NationalRailStation {station_id: $r_id})
+                        MERGE (m)-[:INTERCHANGE {travel_time_min: 5}]->(r)
+                        MERGE (r)-[:INTERCHANGE {travel_time_min: 5}]->(m)
+                        """,
+                        m_id=s["station_id"], r_id=nr_id
+                    )
+        print("  Created interchange links")
+        
     driver.close()
     print("\nNeo4j graph seeded successfully.")
     print("   Open http://localhost:7475 to explore the graph.")
