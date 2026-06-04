@@ -14,6 +14,7 @@ import os
 import sys
 import psycopg2
 from psycopg2.extras import execute_values
+from argon2 import PasswordHasher
 
 # ── resolve paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -193,6 +194,8 @@ def seed_seat_layouts(cur):
 
 
 def seed_users(cur):
+    ph = PasswordHasher()  # 👈 1. 新增這行：初始化 Argon2 雜湊器
+    
     data = load("registered_users.json")
     table_name = "registered_users"
     columns = [
@@ -201,17 +204,20 @@ def seed_users(cur):
     ]
     rows = []
     for user in data:
+        raw_pw = user.get("password")
+        hashed_pw = ph.hash(raw_pw) if raw_pw else None
+
         row = (
             user.get("user_id"),
             user.get("full_name"),
             user.get("email"),
-            user.get("password"),
+            hashed_pw,             
             user.get("phone"),
             user.get("date_of_birth"),
             user.get("secret_question"),
             user.get("secret_answer"),
             user.get("registered_at"),
-            user.get("is_active", True) # 加上預設值確保不為空
+            user.get("is_active", True)
         )
         rows.append(row)
     inserted_count = insert_many(cur, table_name, columns, rows)
