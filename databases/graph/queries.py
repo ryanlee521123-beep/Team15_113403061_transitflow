@@ -171,8 +171,9 @@ def query_interchange_path(origin_id: str, destination_id: str) -> dict:
 
 def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
     """Find all stations within N hops of a delayed station."""
+    # 🚨 關鍵修正：將 *1..$hops 改為 *0..$hops，這樣當 hops=0 時才不會報錯，且能完美回傳起點站
     cypher = """
-    MATCH path = (start {station_id: $delayed_id})-[:METRO_LINK|RAIL_LINK*1..$hops]-(affected)
+    MATCH path = (start {station_id: $delayed_id})-[:METRO_LINK|RAIL_LINK*0..$hops]-(affected)
     RETURN affected.station_id AS station_id, 
            affected.name AS name, 
            min(length(path)) AS hops_away,
