@@ -6,6 +6,17 @@
 --    1. Relational  → dual-network transit data you design below
 --    2. Vector      → policy documents for RAG (provided — do not modify)
 -- ============================================================
+-- ============================================================
+-- DESIGN DECISIONS (Task 1 Requirements)
+-- 1. PK Strategy: We use natural string IDs (VARCHAR) for entities provided by the 
+--    external mock data (e.g., station_id, schedule_id) to maintain data consistency. 
+--    We use SERIAL (auto-incrementing integers) for purely internal bridging tables 
+--    (e.g., seats, policy_documents) for storage efficiency.
+-- 2. Delete Strategy: We use a "Hard Delete with Restrictions" strategy. Most tables 
+--    use 'ON DELETE RESTRICT' to prevent accidental deletion of core operational data 
+--    (e.g., you cannot delete a station if it has schedules). 'ON DELETE CASCADE' is 
+--    only used for tightly coupled child records (e.g., user_credentials deleted if user is deleted).
+-- ============================================================
 
 -- ============================================================
 --  STUDENT TASK — Design and create your relational tables here
@@ -48,15 +59,15 @@ CREATE TABLE lines (
 );
 
 CREATE TABLE station_lines (
-    station_id VARCHAR(10) REFERENCES stations(station_id),
-    line_id VARCHAR(10) REFERENCES lines(line_id),
+    station_id VARCHAR(10) REFERENCES stations(station_id) ON DELETE RESTRICT,
+    line_id VARCHAR(10) REFERENCES lines(line_id) ON DELETE RESTRICT,
     PRIMARY KEY (station_id, line_id)
 );
 
 -- JSON arrays: adjacent_stations
 CREATE TABLE station_connections (
-    from_station_id VARCHAR(10) REFERENCES stations(station_id),
-    to_station_id VARCHAR(10) REFERENCES stations(station_id),
+    from_station_id VARCHAR(10) REFERENCES stations(station_id) ON DELETE RESTRICT,
+    to_station_id VARCHAR(10) REFERENCES stations(station_id) ON DELETE RESTRICT,
     line VARCHAR(10), -- Matching JSON key "line"
     travel_time_min INT NOT NULL,
     PRIMARY KEY (from_station_id, to_station_id, line)
@@ -69,23 +80,23 @@ CREATE TABLE schedules (
     line VARCHAR(10),
     service_type VARCHAR(50),
     direction VARCHAR(20) NOT NULL,
-    origin_station_id VARCHAR(10) REFERENCES stations(station_id),
-    destination_station_id VARCHAR(10) REFERENCES stations(station_id),
+    origin_station_id VARCHAR(10) REFERENCES stations(station_id) ON DELETE RESTRICT,
+    destination_station_id VARCHAR(10) REFERENCES stations(station_id) ON DELETE RESTRICT,
     first_train_time TIME,
     last_train_time TIME,
     frequency_min INT
 );
 
 CREATE TABLE schedule_stops (
-    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id),
-    station_id VARCHAR(10) REFERENCES stations(station_id),
+    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id) ON DELETE RESTRICT,
+    station_id VARCHAR(10) REFERENCES stations(station_id) ON DELETE RESTRICT,
     stop_sequence INT NOT NULL,
     time_from_origin_min INT NOT NULL,
     PRIMARY KEY (schedule_id, station_id)
 );
 
 CREATE TABLE schedule_fares (
-    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id),
+    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id) ON DELETE RESTRICT,
     fare_class VARCHAR(20),
     base_fare_usd DECIMAL(8,2) NOT NULL,
     per_stop_rate_usd DECIMAL(8,2) NOT NULL,
@@ -93,7 +104,7 @@ CREATE TABLE schedule_fares (
 );
 
 CREATE TABLE schedule_operating_days (
-    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id),
+    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id) ON DELETE RESTRICT,
     day_of_week VARCHAR(3),
     PRIMARY KEY (schedule_id, day_of_week)
 );
@@ -102,11 +113,11 @@ CREATE TABLE schedule_operating_days (
 -- 3. Seating & Layouts (National Rail)
 CREATE TABLE train_layouts (
     layout_id VARCHAR(20) PRIMARY KEY,
-    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id)
+    schedule_id VARCHAR(20) REFERENCES schedules(schedule_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE coaches (
-    layout_id VARCHAR(20) REFERENCES train_layouts(layout_id),
+    layout_id VARCHAR(20) REFERENCES train_layouts(layout_id) ON DELETE RESTRICT,
     coach VARCHAR(5) NOT NULL, -- Matched to JSON key "coach"
     fare_class VARCHAR(20) NOT NULL,
     PRIMARY KEY (layout_id, coach)
@@ -119,7 +130,7 @@ CREATE TABLE seats (
     "row" INT NOT NULL,           -- Quoted because ROW is a SQL keyword, matched to JSON
     "column" VARCHAR(2) NOT NULL, -- Quoted because COLUMN is a SQL keyword, matched to JSON
     PRIMARY KEY (layout_id, coach, seat_id),
-    FOREIGN KEY (layout_id, coach) REFERENCES coaches(layout_id, coach)
+    FOREIGN KEY (layout_id, coach) REFERENCES coaches(layout_id, coach) ON DELETE RESTRICT
 );
 
 
@@ -133,7 +144,7 @@ CREATE TABLE users (
     date_of_birth DATE,
     secret_question TEXT,
     secret_answer VARCHAR(255),
-    registered_at TIMESTAMP,
+    registered_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE
 );
 
@@ -156,8 +167,8 @@ CREATE TABLE bookings (
     stops_travelled INT NOT NULL,
     amount_usd DECIMAL(8,2) NOT NULL,
     status VARCHAR(20) NOT NULL,
-    booked_at TIMESTAMP,
-    travelled_at TIMESTAMP
+    booked_at TIMESTAMPTZ,
+    travelled_at TIMESTAMPTZ
 );
 
 CREATE TABLE metro_travel_history (
@@ -171,8 +182,8 @@ CREATE TABLE metro_travel_history (
     stops_travelled INT NOT NULL,
     amount_usd DECIMAL(8,2) NOT NULL,
     status VARCHAR(20) NOT NULL,
-    purchased_at TIMESTAMP,
-    travelled_at TIMESTAMP
+    purchased_at TIMESTAMPTZ,
+    travelled_at TIMESTAMPTZ
 );
 
 -- ============================================================
