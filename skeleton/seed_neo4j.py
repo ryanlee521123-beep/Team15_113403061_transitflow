@@ -63,8 +63,7 @@ def seed():
             )
         print("  Created NationalRailStation nodes")
 
-        # 3. 建立捷運路線連線 (Edges: METRO_LINK)
-        # 遍歷 adjacent_stations 來建立相鄰車站的單向箭頭
+        # 3. 建立捷運路線連線
         for s in metro_stations:
             for adj in s.get("adjacent_stations", []):
                 session.run(
@@ -72,14 +71,14 @@ def seed():
                     MATCH (a:Station {station_id: $from_id})
                     MATCH (b:Station {station_id: $to_id})
                     MERGE (a)-[r:METRO_LINK {line: $line}]->(b)
-                    SET r.travel_time_min = $time
+                    SET r.travel_time_min = $time, r.fare_usd = $fare
                     """,
                     from_id=s["station_id"], to_id=adj["station_id"],
-                    line=adj["line"], time=adj["travel_time_min"]
+                    line=adj["line"], time=adj["travel_time_min"], 
+                    fare=adj.get("fare_usd", 5) # 預設或取值
                 )
-        print("  Created metro links")
 
-        # 4. 建立國鐵路線連線 (Edges: RAIL_LINK)
+        # 4. 建立國鐵路線連線
         for s in rail_stations:
             for adj in s.get("adjacent_stations", []):
                 session.run(
@@ -87,15 +86,14 @@ def seed():
                     MATCH (a:Station {station_id: $from_id})
                     MATCH (b:Station {station_id: $to_id})
                     MERGE (a)-[r:RAIL_LINK {line: $line}]->(b)
-                    SET r.travel_time_min = $time
+                    SET r.travel_time_min = $time, r.fare_usd = $fare
                     """,
                     from_id=s["station_id"], to_id=adj["station_id"],
-                    line=adj["line"], time=adj["travel_time_min"]
+                    line=adj["line"], time=adj["travel_time_min"],
+                    fare=adj.get("fare_usd", 15) # 預設或取值
                 )
-        print("  Created national rail links")
 
-        # 5. 建立跨網轉乘連線 (Edges: INTERCHANGE)
-        # 找出共構車站，並建立雙向的轉乘通道，預設轉乘步行時間設為 5 分鐘
+        # 5. 建立跨網轉乘連線 (修正標籤為 INTERCHANGE_TO)
         for s in metro_stations:
             if s.get("is_interchange_national_rail"):
                 nr_id = s.get("interchange_national_rail_station_id")
@@ -104,17 +102,11 @@ def seed():
                         """
                         MATCH (m:MetroStation {station_id: $m_id})
                         MATCH (r:NationalRailStation {station_id: $r_id})
-                        MERGE (m)-[:INTERCHANGE {travel_time_min: 5}]->(r)
-                        MERGE (r)-[:INTERCHANGE {travel_time_min: 5}]->(m)
+                        MERGE (m)-[:INTERCHANGE_TO {travel_time_min: 5}]->(r)
+                        MERGE (r)-[:INTERCHANGE_TO {travel_time_min: 5}]->(m)
                         """,
                         m_id=s["station_id"], r_id=nr_id
                     )
-        print("  Created interchange links")
-        
-    driver.close()
-    print("\nNeo4j graph seeded successfully.")
-    print("   Open http://localhost:7475 to explore the graph.")
-
 
 if __name__ == "__main__":
     print("Connecting to Neo4j...")
