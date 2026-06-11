@@ -385,8 +385,22 @@ def query_station_connections(station_id: str) -> list[dict]: ...
 
 <!-- Add entries as you make decisions. Format: "Decision: X. Why: Y." -->
 
-- [ ] Schema design: TODO — add your table/column decisions here
-- [ ] Graph schema: TODO — add your node label and relationship type decisions here
+- [ ] Schema design:
+  - **Decision:** Consolidated metro and national rail stations into a unified `stations` table. 
+    **Why:** To maintain a clean, normalized relational schema, simplify foreign key constraints for bookings, and avoid complex UNION queries.
+  - **Decision:** Upgraded all timestamp columns to `TIMESTAMPTZ` and explicitly defined `ON DELETE RESTRICT` (for core data) or `ON DELETE CASCADE` (for child records).
+    **Why:** To ensure timezone-aware data integrity and prevent accidental deletion of critical operational records, strictly adhering to the static evaluation requirements.
+  - **Decision:** Implemented Argon2 hashing for all user passwords and secret answers.
+    **Why:** To guarantee robust security for user credentials over outdated methods.
+  - **Decision:** Wrapped `execute_booking` operations inside a single atomic transaction (`conn.autocommit = False`).
+    **Why:** To ensure database consistency; a booking is never created without its corresponding payment record.
+- [ ] Graph schema: 
+  - **Decision:** Applied a dual-labeling strategy (`Station` + `MetroStation` / `NationalRailStation`) for node creation.
+    **Why:** To satisfy strict grading requirements for specific network labels while keeping APOC Dijkstra queries flexible and concise by searching the generic `Station` label.
+  - **Decision:** Strictly named relationships as `METRO_LINK`, `RAIL_LINK`, and `INTERCHANGE_TO` with `travel_time_min` and `fare_usd` properties.
+    **Why:** To perfectly align with the live routing query requirements (shortest and cheapest routes) defined in the grading rubric.
+  - **Decision:** Configured Cypher delay ripple query to use `*0..$hops` instead of `*1..$hops`.
+    **Why:** To prevent Cypher syntax crashes during live edge-case testing when `hops=0` is requested.
 - [ ] (example) Metro schedule stop ordering: using `jsonb_array_elements` approach — easier to debug than containment operators
 
 ## Prompts That Worked
@@ -395,10 +409,19 @@ def query_station_connections(station_id: str) -> list[dict]: ...
 
 ### Schema design prompt that worked:
 ```
-TODO — add a prompt here after your schema design workshop
+"I need to design or update the PostgreSQL schema for TransitFlow. We are using a unified 'stations' table pattern instead of separated tables.
+Rules to follow:
+Use TIMESTAMPTZ for all datetime columns (never just TIMESTAMP).
+Explicitly define ON DELETE RESTRICT or ON DELETE CASCADE for every foreign key.
+Include inline SQL comments explaining the design choice between natural string IDs (VARCHAR) and auto-incrementing IDs (SERIAL) for primary keys.
+Please convert this mock data structure into a normalized schema: [PASTE_JSON_STRUCTURE_HERE]"
 ```
 
 ### Query implementation prompt that worked:
 ```
-TODO — add after implementing your first function
+"I need to implement a database query function for TransitFlow.
+Function signature: [PASTE_FUNCTION_SIGNATURE_HERE]
+If Relational (PostgreSQL): Use _connect() and psycopg2.extras.RealDictCursor. For write operations, you MUST set conn.autocommit = False, wrap in try/except, and return (True, result) or (False, error). Never raise exceptions for missing data (return [] or None).
+If Graph (Neo4j): Use _driver() and with driver.session():. Strictly use node labels (MetroStation, NationalRailStation) and relationship types (METRO_LINK, RAIL_LINK, INTERCHANGE_TO). Ensure 0-hop queries do not crash (e.g., use *0..$hops).
+Here is the relevant schema context: [PASTE_RELATED_SCHEMA_HERE]"
 ```
